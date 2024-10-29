@@ -1,4 +1,7 @@
 use std::time::{UNIX_EPOCH, SystemTime};
+use std::thread;
+
+mod storage;
 
 #[derive(Clone)]
 enum TimeType {
@@ -88,6 +91,66 @@ fn get_relative_time(current: u128, against: u128, format: TimeType) -> String {
     result
 }
 
+fn print_all_markers() {
+    let doc = storage::read_data();
+
+    println!();
+    
+    let mut count = 1;
+    let events = doc["events"].as_array().unwrap();
+    for event in events.iter() {
+        let entry = event.as_inline_table().unwrap();
+        let timestamp = entry["timestamp"].as_integer().unwrap();
+        let description = entry["description"].as_str().unwrap();
+        println!("{}: {} {}", count, timestamp, description);
+        count += 1;
+    }
+
+    println!("\nTotal markers: {}\n", count - 1);
+}
+
+fn print_marker(index: u64) {
+    let index = index - 1; // Convert to 0-based index
+    let doc = storage::read_data();
+
+    let events = doc["events"].as_array().unwrap();
+
+    let event = events.get(index as usize).unwrap();
+    let entry = event.as_inline_table().unwrap();
+
+    let timestamp = entry["timestamp"].as_integer().unwrap() as u128;
+    let description = entry["description"].as_str().unwrap();
+
+    let current_unix_sec = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as u128;
+    let distance_hr = get_relative_time(current_unix_sec, timestamp, TimeType::UnixSeconds);
+    
+    println!();
+    println!("{}: {}\n", timestamp, description);
+    println!("{}", distance_hr);
+    println!();
+}
+
+fn add_marker(timestamp: u128, description: &str) {
+    let mut doc = storage::read_data();
+
+    let val = format!("{{timestamp = {}, description = \"{}\"}}", timestamp, description);
+    let val: toml_edit::Value = val.parse().unwrap();
+
+    let array = doc["events"].as_array_mut().unwrap();
+    array.push_formatted(val);
+
+    storage::write_data(doc);
+}
+
+fn clear_markers() {
+    let mut doc = storage::read_data();
+
+    let array = doc["events"].as_array_mut().unwrap();
+    array.clear();
+
+    storage::write_data(doc);
+}
+
 fn main() {
     const YEAR_3000_UNIX_SECONDS: u128 = 32503680000;
 
@@ -95,10 +158,14 @@ fn main() {
 
     let mut input = String::new();
     let mut format = TimeType::UnixSeconds;
+    let mut timer = false;
+    let mut print_markers = false;
 
     let mut user_gave_format = false;
 
-    for arg in args.iter().skip(1) {
+    let mut i = 1; // Skip the first argument, which is the program name
+    while i < args.len() {
+        let arg = &args[i];
         if arg == "-s" {
             format = TimeType::UnixSeconds;
             user_gave_format = true;
@@ -107,7 +174,54 @@ fn main() {
             format = TimeType::UnixMilliseconds;
             user_gave_format = true;
         }
+        if arg == "-t" {
+            timer = true;
+        }
+        if arg == "markers" {
+            print_markers = true;
+        }
+        // New marker
+        if arg == "m" {
+            // If there are no more arguments, print all markers
+            if args.len() - 1 <= i {
+                print_all_markers();
+                return;
+            }
+
+            // If there is only one more argument, and it is a number, print that marker.
+            if args.len() - 1 == i + 1 {
+                let marker_index = args[i + 1].parse::<u64>().unwrap_or(0);
+                if marker_index != 0 {
+                    print_marker(marker_index);
+                    return;
+                }
+            }
+
+            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as u128;
+
+            // Description is every other argument
+            let mut description = String::new();
+            for arg in args.iter().skip(2) {
+                description.push_str(&arg);
+                description.push_str(" ");
+            }
+
+            description = description.trim().to_string();
+
+            add_marker(timestamp, &description);
+            println!("Added marker {}", timestamp);
+
+            return;
+        }
+        if arg == "clear" {
+            clear_markers();
+            println!("Cleared all markers");
+            return;
+        }
         input = arg.to_string();
+        println!("set input: {}", input);
+
+        i += 1;
     }
 
     let current_unix_sec = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as u128;
@@ -116,6 +230,7 @@ fn main() {
     let current_date = chrono::DateTime::from_timestamp(current_unix_sec as i64, 0).unwrap();
     let current_date_hr = format!("{}", current_date.format("%H:%M:%S %d-%m-%Y"));
 
+    // No input
     if input.is_empty() {
         println!();
         println!("Timestamp: {} ({})", current_unix_sec, TimeType::UnixSeconds);
@@ -126,6 +241,27 @@ fn main() {
         return;
     }
 
+    if print_markers {
+        print_all_markers();
+        return;
+    }
+
+    if timer {
+        let mut input = input.parse::<u128>().expect("Invalid input");
+
+        let mut timer = match format {
+            TimeType::UnixSeconds => std::time::Duration::from_secs(input as u64),
+            TimeType::UnixMilliseconds => std::time::Duration::from_millis(input as u64),
+        };
+
+        println!("Sleeping...");
+        thread::sleep(timer);
+        println!("Done!");
+
+        return;
+    }
+
+    // If the user only gave a number
     let input = input.parse::<u128>().expect("Invalid input");
 
     if !user_gave_format && input >= YEAR_3000_UNIX_SECONDS {

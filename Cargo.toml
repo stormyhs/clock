@@ -5,3 +5,5 @@ edition = "2021"
 
 [dependencies]
 chrono = "0.4.38"
+dirs = "5.0.1"
+toml_edit = "0.22.22"
