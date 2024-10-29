@@ -49,7 +49,7 @@ pub fn write_data(doc: toml_edit::DocumentMut) {
         .join(FILE_NAME);
 
     match fs::write(&data_path, doc.to_string()) {
-        Ok(_) => println!("✔️ Updated 'clock.toml'"),
+        Ok(_) => { }
         Err(e) => {
             println!("❌ Could not update 'clock.toml'");
             println!("{e}");
