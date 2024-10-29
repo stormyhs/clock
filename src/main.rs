@@ -1,5 +1,6 @@
 use std::time::{UNIX_EPOCH, SystemTime};
 use std::thread;
+use colored::*;
 
 mod storage;
 
@@ -16,6 +17,45 @@ impl std::fmt::Display for TimeType {
             TimeType::UnixMilliseconds => write!(f, "Unix Millisec"),
         }
     }
+}
+
+fn help() {
+    println!();
+    println!("Usage:   {} {} {}",
+        "clock".green(),
+        "[options]".cyan(),
+        "[input]".cyan()
+    );
+    println!();
+    println!("Example: {} {} {}",
+        "clock".green(),
+        "m".yellow(),
+        "Started working on project".blue()
+    );
+    println!("Example: {} {} {}",
+        "clock".green(),
+        "m".yellow(),
+        "1".blue()
+    );
+    println!("Example: {} {}",
+        "clock".green(),
+        "1730172543".blue(),
+    );
+    println!("Example: {}",
+        "clock".green()
+    );
+    println!();
+    println!("Commands:");
+    println!("  {}       Show all markers", "markers".cyan());
+    println!("  {} {}        Add a marker - Shows all markers if no desc is given", "m".cyan(), "desc".blue());
+    println!("  {}         Clear all markers", "clear".cyan());
+    println!();
+    println!("Options:");
+    println!("  {}, {}    Display this help message", "-h".cyan(), "--help".cyan());
+    println!("  {}            Set input as Unix seconds (default)", "-s".cyan());
+    println!("  {}           Set input as Unix milliseconds", "-ms".cyan());
+    println!("  {}            Set a timer", "-t".cyan());
+    println!();
 }
 
 /// Returns a human-readable string representing the time difference between two dates.
@@ -166,6 +206,10 @@ fn main() {
     let mut i = 1; // Skip the first argument, which is the program name
     while i < args.len() {
         let arg = &args[i];
+        if arg == "-h" || arg == "--help" {
+            help();
+            return;
+        }
         if arg == "-s" {
             format = TimeType::UnixSeconds;
             user_gave_format = true;
@@ -219,7 +263,6 @@ fn main() {
             return;
         }
         input = arg.to_string();
-        println!("set input: {}", input);
 
         i += 1;
     }
