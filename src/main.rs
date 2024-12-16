@@ -1,5 +1,7 @@
 use std::time::{UNIX_EPOCH, SystemTime};
 use std::thread;
+use std::time::Duration;
+use std::io::Write;
 use colored::*;
 
 mod storage;
@@ -20,7 +22,6 @@ impl std::fmt::Display for TimeType {
 }
 
 fn help() {
-    println!();
     println!("Usage:   {} {} {}",
         "clock".green(),
         "[options]".cyan(),
@@ -55,7 +56,6 @@ fn help() {
     println!("  {}            Set input as Unix seconds (default)", "-s".cyan());
     println!("  {}           Set input as Unix milliseconds", "-ms".cyan());
     println!("  {}            Set a timer", "-t".cyan());
-    println!();
 }
 
 /// Returns a human-readable string representing the time difference between two dates.
@@ -146,7 +146,7 @@ fn print_all_markers() {
         count += 1;
     }
 
-    println!("\nTotal markers: {}\n", count - 1);
+    println!("Total markers: {}", count - 1);
 }
 
 fn print_marker(index: u64) {
@@ -165,7 +165,7 @@ fn print_marker(index: u64) {
     let distance_hr = get_relative_time(current_unix_sec, timestamp, TimeType::UnixSeconds);
     
     println!();
-    println!("{}: {}\n", timestamp, description);
+    println!("{}: {}", timestamp, description);
     println!("{}", distance_hr);
     println!();
 }
@@ -189,6 +189,103 @@ fn clear_markers() {
     array.clear();
 
     storage::write_data(doc);
+}
+
+fn countdown(duration: Duration) {
+    let mut current = duration;
+    let interval = Duration::from_millis(50);
+
+    loop {
+        let current_hr = format!("{:02}:{:02}:{:02}:{:02}",
+            current.as_secs() / 3600,
+            (current.as_secs() % 3600) / 60,
+            current.as_secs() % 60,
+            current.subsec_millis()
+        );
+
+        print!("\rTimer: {}", current_hr);
+        std::io::stdout().flush().unwrap();
+
+        if current.as_secs() == 0 {
+            break;
+        }
+
+        thread::sleep(interval);
+        current -= interval;
+    }
+
+    println!();
+    println!("Timer finished.");
+    
+    let output = std::process::Command::new("/mnt/c/Users/PC/Desktop/code/cross-programs/wsl-notify-send.exe")
+        .arg("-c")
+        .arg("Clock")
+        .arg("Timer finished.")
+        .output()
+        .expect("Failed to send notification");
+}
+
+fn countup() {
+    let mut current = Duration::from_secs(0);
+    let interval = Duration::from_millis(50);
+
+    loop {
+        let current_hr = format!("{:02}:{:02}:{:02}:{:02}",
+            current.as_secs() / 3600,
+            (current.as_secs() % 3600) / 60,
+            current.as_secs() % 60,
+            current.subsec_millis()
+        );
+
+        print!("\rTimer: {}", current_hr);
+        std::io::stdout().flush().unwrap();
+
+        thread::sleep(interval);
+        current += interval;
+    }
+}
+
+/// Parses a duration from a string input.
+/// Example: "1h30m15s"
+fn parse_duration_from_input(input: String) -> Duration {
+    let mut duration = Duration::from_secs(0);
+
+    let mut current = String::new();
+    let mut valid = false;
+    for c in input.chars() {
+        if c.is_digit(10) {
+            current.push(c);
+        } else {
+            let num = current.parse::<u64>().unwrap();
+            current.clear();
+
+            match c {
+                's' => {
+                    valid = true;
+                    duration += Duration::from_secs(num)
+                }
+                'm' => {
+                    valid = true;
+                    duration += Duration::from_secs(num * 60)
+                }
+                'h' => {
+                    valid = true;
+                    duration += Duration::from_secs(num * 60 * 60)
+                }
+                _ => {
+                    println!("Invalid duration format. Provide a duration in the format of `1h30m15s`.");
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+
+    if !valid {
+        println!("Invalid duration format. Provide a duration in the format of `1h30m15s`.");
+        std::process::exit(1);
+    }
+
+    duration
 }
 
 fn main() {
@@ -221,10 +318,13 @@ fn main() {
         if arg == "-t" {
             timer = true;
         }
+        if arg == "-c" {
+            countup();
+            return;
+        }
         if arg == "markers" {
             print_markers = true;
         }
-        // New marker
         if arg == "m" {
             // If there are no more arguments, print all markers
             if args.len() - 1 <= i {
@@ -275,11 +375,9 @@ fn main() {
 
     // No input
     if input.is_empty() {
-        println!();
         println!("Timestamp: {} ({})", current_unix_sec, TimeType::UnixSeconds);
         println!("Timestamp: {} ({})", current_unix_millisec, TimeType::UnixMilliseconds);
         println!("Date:      {}", current_date_hr);
-        println!();
 
         return;
     }
@@ -290,22 +388,19 @@ fn main() {
     }
 
     if timer {
-        let mut input = input.parse::<u128>().expect("Invalid input");
-
-        let mut timer = match format {
-            TimeType::UnixSeconds => std::time::Duration::from_secs(input as u64),
-            TimeType::UnixMilliseconds => std::time::Duration::from_millis(input as u64),
-        };
-
-        println!("Sleeping...");
-        thread::sleep(timer);
-        println!("Done!");
-
+        let duration = parse_duration_from_input(input);
+        countdown(duration);
         return;
     }
 
     // If the user only gave a number
-    let input = input.parse::<u128>().expect("Invalid input");
+    let input = match input.parse::<u128>() {
+        Ok(n) => n,
+        Err(_) => {
+            println!("Invalid input. Provide a unix timestamp, or read the `--help` page.");
+            return;
+        }
+    };
 
     if !user_gave_format && input >= YEAR_3000_UNIX_SECONDS {
         format = TimeType::UnixMilliseconds;
@@ -332,10 +427,8 @@ fn main() {
         TimeType::UnixMilliseconds => TimeType::UnixSeconds,
     };
 
-    println!();
     println!("Timestamp: {} ({})", input, format);
     println!("Timestamp: {} ({})", alt_input, alt_format);
     println!("Date:      {}", date_hr);
     println!("Distance:  {}", distance_hr);
-    println!();
 }
